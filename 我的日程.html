@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的日程</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+  <!-- SheetJS for Excel parsing -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- PDF.js for PDF parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root {
+      --bg: #FAF7F2;
+      --surface: #FFFFFF;
+      --border: #E8E0D4;
+      --text-primary: #1A1612;
+      --text-secondary: #7A6E63;
+      --accent: #C45C3A;
+      --accent-light: #F5EBE5;
+      --accent-dark: #9E4429;
+      --shadow-sm: 0 1px 4px rgba(26,22,18,0.06);
+      --shadow-md: 0 4px 16px rgba(26,22,18,0.10);
+      --shadow-lg: 0 8px 32px rgba(26,22,18,0.12);
+      --radius: 12px;
+      --font-serif: 'Noto Serif SC', serif;
+      --font-sans: 'Noto Sans SC', sans-serif;
+      --green: #43A047;
+      --green-light: #E6F4EA;
+      --blue: #1967D2;
+      --blue-light: #E8F0FE;
+      --orange: #B06000;
+      --orange-light: #FEF7E0;
+      --red: #C5221F;
+      --red-light: #FCE8E6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0.4;
+    }
+
+    /* ─── Header ─── */
+    .header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(250,247,242,0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+    }
+    .header-inner {
+      max-width: 720px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between; height: 64px;
+    }
+    .header-logo { display: flex; align-items: center; gap: 10px; }
+    .header-logo .logo-mark {
+      width: 32px; height: 32px; background: var(--accent); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .header-logo h1 { font-family: var(--font-serif); font-size: 18px; font-weight: 600; letter-spacing: 0.02em; }
+    .header-date { text-align: right; }
+    .header-date .day-name { font-size: 12px; color: var(--text-secondary); }
+    .header-date .full-date { font-family: var(--font-serif); font-size: 15px; font-weight: 600; }
+
+    /* ─── Container ─── */
+    .container { max-width: 720px; margin: 0 auto; padding: 24px 24px 80px; }
+
+    /* ─── View Tabs ─── */
+    .view-tabs {
+      display: flex; align-items: center; gap: 4px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 4px; margin-bottom: 24px; width: fit-content;
+      flex-wrap: wrap;
+    }
+    .view-tab {
+      padding: 8px 18px; border-radius: 10px; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s; color: var(--text-secondary);
+      border: none; background: none; font-family: var(--font-sans);
+      white-space: nowrap;
+    }
+    .view-tab:hover { color: var(--text-primary); }
+    .view-tab.active { background: var(--accent); color: white; font-weight: 600; }
+
+    /* ─── Date Navigator ─── */
+    .date-nav {
+      display: flex; align-items: center; justify-content: center;
+      gap: 16px; margin-bottom: 24px; position: relative;
+    }
+    .date-nav-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 1.5px solid var(--border); background: var(--surface);
+      color: var(--text-secondary); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+    }
+    .date-nav-btn:hover { border-color: var(--accent); color: var(--accent); transform: scale(1.05); }
+    .date-nav-center { display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; }
+    .date-nav-display {
+      font-family: var(--font-serif); font-size: 16px; font-weight: 600;
+      text-align: center; cursor: pointer; padding: 6px 16px; border-radius: 8px;
+      transition: all 0.2s; display: flex; align-items: center; gap: 6px; user-select: none;
+    }
+    .date-nav-display:hover { background: var(--accent-light); color: var(--accent); }
+    .cal-icon { font-size: 13px; opacity: 0.7; }
+
+    /* ─── Calendar Dropdown ─── */
+    .calendar-dropdown {
+      position: absolute; top: calc(100% + 8px); left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: 16px; padding: 20px; box-shadow: var(--shadow-lg); z-index: 200;
+      opacity: 0; pointer-events: none;
+      transform: translateX(-50%) translateY(-8px);
+      transition: all 0.25s cubic-bezier(0.32,0.72,0,1);
+      min-width: 300px;
+    }
+    .calendar-dropdown.open { opacity: 1; pointer-events: all; transform: translateX(-50%) translateY(0); }
+    .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .cal-month-label { font-family: var(--font-serif); font-size: 15px; font-weight: 700; }
+    .cal-nav-btn {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 1px solid var(--border); background: var(--bg);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: var(--text-secondary); transition: all 0.2s;
+    }
+    .cal-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; }
+    .cal-weekday { text-align: center; font-size: 11px; font-weight: 600; color: var(--text-secondary); padding: 4px 0 8px; letter-spacing: 0.04em; }
+    .cal-day {
+      aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: all 0.15s; color: var(--text-primary); position: relative;
+    }
+    .cal-day:hover:not(.other-month) { background: var(--accent-light); color: var(--accent); }
+    .cal-day.today { color: var(--accent); font-weight: 700; }
+    .cal-day.today::after { content:''; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+    .cal-day.selected { background: var(--accent); color: white; font-weight: 600; }
+    .cal-day.selected.today::after { background: white; }
+    .cal-day.other-month { color: #ccc; cursor: default; }
+    .cal-day.has-tasks::before { content:''; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: 0.7; }
+    .cal-day.selected.has-tasks::before { background: white; }
+    .cal-footer { margin-top: 12px; display: flex; justify-content: center; }
+    .cal-today-btn {
+      font-size: 12px; color: var(--accent); border: 1px solid var(--accent-light);
+      background: var(--accent-light); border-radius: 20px; padding: 4px 16px;
+      cursor: pointer; font-family: var(--font-sans); font-weight: 500; transition: all 0.2s;
+    }
+    .cal-today-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* ─── Stats Bar ─── */
+    .stats-bar { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; }
+    .stat-card .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); font-weight: 500; }
+    .stat-card .stat-value { font-family: var(--font-serif); font-size: 24px; font-weight: 700; }
+    .stat-card .stat-sub { font-size: 11px; color: var(--text-secondary); }
+    .stat-card.accent-stat { border-color: var(--accent); background: linear-gradient(135deg, var(--accent-light) 0%, #fff 60%); }
+    .stat-card.accent-stat .stat-value { color: var(--accent-dark); }
+
+    /* ─── Task List ─── */
+    .task-list { display: flex; flex-direction: column; gap: 10px; }
+    .task-card {
+      background: var(--surface); border: 1.5px solid var(--border); border-radius: 14px;
+      padding: 14px 16px; cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: flex-start; gap: 12px; box-shadow: var(--shadow-sm);
+    }
+    .task-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); transform: translateX(2px); }
+    .task-card.completed { opacity: 0.55; }
+    .task-card.completed .task-card-title { text-decoration: line-through; color: var(--text-secondary); }
+    .task-check {
+      width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border);
+      flex-shrink: 0; margin-top: 1px; display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s; font-size: 12px; color: transparent;
+    }
+    .task-check.checked { background: var(--green); border-color: var(--green); color: white; }
+    .task-card:hover .task-check:not(.checked) { border-color: var(--accent); }
+    .task-card-body { flex: 1; min-width: 0; }
+    .task-card-title { font-size: 14px; font-weight: 500; line-height: 1.5; margin-bottom: 6px; }
+    .task-card-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .task-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 20px; }
+    .task-tag.work { background: var(--blue-light); color: var(--blue); }
+    .task-tag.personal { background: var(--orange-light); color: var(--orange); }
+    .task-tag.urgent { background: var(--red-light); color: var(--red); }
+    .task-tag.meeting { background: var(--green-light); color: var(--green); }
+    .task-tag.other { background: var(--accent-light); color: var(--accent-dark); }
+    .task-tag.imported { background: #F3E5F5; color: #7B1FA2; }
+    .task-priority-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+    .task-priority-badge.high { background: var(--red-light); color: var(--red); }
+    .task-priority-badge.medium { background: var(--orange-light); color: var(--orange); }
+    .task-priority-badge.low { background: var(--green-light); color: var(--green); }
+    .task-note-preview { font-size: 11px; color: var(--text-secondary); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .task-card-actions { display: flex; flex-direction: column; gap: 4px; opacity: 0; transition: opacity 0.2s; flex-shrink: 0; }
+    .task-card:hover .task-card-actions { opacity: 1; }
+    .task-action-btn {
+      width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 13px; transition: all 0.15s; color: var(--text-secondary);
+    }
+    .task-action-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+    .task-action-btn.delete:hover { background: var(--red-light); border-color: var(--red); color: var(--red); }
+
+    /* ─── Monthly Summary ─── */
+    .month-summary-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .month-summary-title { font-family: var(--font-serif); font-size: 20px; font-weight: 700; }
+    .month-summary-nav { display: flex; align-items: center; gap: 8px; }
+    .month-summary-nav-btn {
+      width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border);
+      background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: var(--text-secondary); transition: all 0.2s;
+    }
+    .month-summary-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .month-label { font-family: var(--font-serif); font-size: 14px; font-weight: 600; min-width: 80px; text-align: center; }
+    .month-stat-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 24px; }
+    .month-stat-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+    .month-stat-chip .chip-icon { font-size: 20px; }
+    .month-stat-chip .chip-num { font-family: var(--font-serif); font-size: 18px; font-weight: 700; }
+    .month-stat-chip .chip-label { font-size: 11px; color: var(--text-secondary); }
+    .month-day-group { margin-bottom: 24px; }
+    .month-day-label { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .month-day-label .day-badge { background: var(--accent); color: white; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 20px; }
+    .month-day-label .day-badge.weekend { background: var(--text-secondary); }
+    .month-day-label .day-date { font-size: 12px; color: var(--text-secondary); }
+    .month-day-label .day-divider { flex: 1; height: 1px; background: var(--border); }
+    .month-day-label .day-count { font-size: 11px; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 1px 8px; }
+
+    /* ─── Import View ─── */
+    .import-panel { background: var(--surface); border: 1.5px solid var(--border); border-radius: 16px; padding: 28px; margin-bottom: 20px; }
+    .import-panel-title { font-family: var(--font-serif); font-size: 18px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+    .import-drop-zone {
+      border: 2px dashed var(--border); border-radius: 14px; padding: 40px 20px;
+      text-align: center; cursor: pointer; transition: all 0.3s;
+      background: var(--bg); margin-bottom: 20px; position: relative;
+    }
+    .import-drop-zone:hover, .import-drop-zone.dragover {
+      border-color: var(--accent); background: var(--accent-light);
+    }
+    .import-drop-zone .drop-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
+    .import-drop-zone .drop-text { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+    .import-drop-zone .drop-text b { color: var(--accent); }
+    .import-drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .import-files-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; max-height: 240px; overflow-y: auto; }
+    .import-file-info-item {
+      display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+      background: var(--green-light); border: 1px solid #C8E6C9; border-radius: 10px;
+    }
+    .import-file-info-item .file-icon { font-size: 22px; flex-shrink: 0; }
+    .import-file-info-item .file-detail { flex: 1; min-width: 0; }
+    .import-file-info-item .file-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .import-file-info-item .file-size { font-size: 11px; color: var(--text-secondary); }
+    .import-file-info-item .file-remove {
+      width: 26px; height: 26px; border-radius: 50%; border: 1px solid #C8E6C9;
+      background: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: var(--text-secondary); font-size: 13px; transition: all 0.2s; flex-shrink: 0;
+    }
+    .import-file-info-item .file-remove:hover { background: var(--red-light); border-color: var(--red); color: var(--red); }
+    .import-add-more-zone {
+      border: 1.5px dashed var(--border); border-radius: 10px;
+      padding: 16px; text-align: center; cursor: pointer;
+      transition: all 0.3s; background: var(--bg);
+      margin-bottom: 12px; position: relative;
+    }
+    .import-add-more-zone:hover, .import-add-more-zone.dragover {
+      border-color: var(--accent); background: var(--accent-light);
+    }
+    .import-add-more-zone .import-add-more-text {
+      font-size: 13px; color: var(--text-secondary);
+      pointer-events: none;
+    }
+    .import-add-more-zone .import-add-more-text b { color: var(--accent); }
+    .import-batch-summary {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 14px; background: var(--accent-light); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 12px;
+    }
+    .import-batch-summary .summary-text { font-size: 12px; color: var(--accent-dark); font-weight: 500; }
+    .import-batch-summary .summary-clear { font-size: 12px; color: var(--accent); cursor: pointer; border: none; background: none; font-family: var(--font-sans); text-decoration: underline; }
+    .import-drop-zone-actions {
+      display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap;
+    }
+    .import-drop-zone-btn {
+      padding: 6px 16px; border-radius: 8px; border: 1.5px solid var(--border);
+      background: var(--surface); cursor: pointer; font-size: 12px; font-weight: 500;
+      font-family: var(--font-sans); color: var(--text-secondary); transition: all 0.2s;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .import-drop-zone-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+    .import-file-info {
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+      background: var(--green-light); border: 1px solid #C8E6C9; border-radius: 10px; margin-bottom: 20px;
+    }
+    .import-file-info .file-icon { font-size: 24px; }
+    .import-file-info .file-detail { flex: 1; }
+    .import-file-info .file-name { font-size: 14px; font-weight: 500; }
+    .import-file-info .file-size { font-size: 11px; color: var(--text-secondary); }
+    .import-file-info .file-remove {
+      width: 28px; height: 28px; border-radius: 50%; border: 1px solid #C8E6C9;
+      background: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      color: var(--text-secondary); font-size: 14px; transition: all 0.2s;
+    }
+    .import-file-info .file-remove:hover { background: var(--red-light); border-color: var(--red); color: var(--red); }
+    .import-name-input-row {
+      display: flex; gap: 10px; margin-bottom: 20px; align-items: flex-end;
+    }
+    .import-name-input-row .form-group { flex: 1; margin-bottom: 0; }
+    .import-btn-row { display: flex; gap: 10px; margin-bottom: 0; }
+    .import-result { margin-top: 20px; }
+    .import-result-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .import-result-title { font-family: var(--font-serif); font-size: 16px; font-weight: 700; }
+    .import-result-count { font-size: 12px; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 2px 12px; }
+    .import-preview-table {
+      width: 100%; border-collapse: collapse; margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .import-preview-table th {
+      background: var(--bg); padding: 8px 12px; text-align: left;
+      font-size: 11px; font-weight: 600; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      border-bottom: 1.5px solid var(--border);
+    }
+    .import-preview-table td {
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .import-preview-table tr:hover td { background: var(--accent-light); }
+    .import-preview-table .match-cell { background: #FFF3E0; font-weight: 500; }
+    .import-select-all-row {
+      display: flex; align-items: center; gap: 10px; padding: 12px 0;
+      border-bottom: 1px solid var(--border); margin-bottom: 12px;
+    }
+    .import-select-all-row label { font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .import-item-row {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 0;
+      border-bottom: 1px solid #f0ebe4;
+    }
+    .import-item-row:last-child { border-bottom: none; }
+    .import-item-row input[type="checkbox"] { margin-top: 3px; accent-color: var(--accent); width: 16px; height: 16px; }
+    .import-item-row .item-date {
+      font-size: 12px; font-weight: 600; color: var(--accent);
+      background: var(--accent-light); padding: 2px 10px; border-radius: 20px;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .import-item-row .item-content { flex: 1; font-size: 13px; line-height: 1.6; }
+    .import-item-row .item-source { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+    .import-apply-row { display: flex; gap: 12px; margin-top: 16px; }
+    .btn-sm { padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; font-family: var(--font-sans); cursor: pointer; border: none; transition: all 0.2s; }
+    .btn-import { background: var(--accent); color: white; }
+    .btn-import:hover { background: var(--accent-dark); }
+    .btn-import:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-outline { background: var(--surface); color: var(--text-secondary); border: 1.5px solid var(--border); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .import-empty { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+    .import-empty .empty-icon { font-size: 36px; margin-bottom: 10px; opacity: 0.35; }
+    .import-hint {
+      font-size: 12px; color: var(--text-secondary); line-height: 1.7;
+      padding: 12px 16px; background: var(--bg); border-radius: 10px;
+      border: 1px solid var(--border); margin-bottom: 16px;
+    }
+    .import-hint b { color: var(--accent-dark); }
+
+    /* ─── Empty State ─── */
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+    .empty-state .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.35; }
+    .empty-state p { font-size: 14px; line-height: 1.7; }
+
+    /* ─── FAB ─── */
+    .add-task-fab {
+      position: fixed; bottom: 32px; right: 32px; width: 56px; height: 56px;
+      border-radius: 50%; background: var(--accent); color: white; border: none;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 28px; box-shadow: 0 4px 20px rgba(196,92,58,0.4);
+      transition: all 0.3s; z-index: 50;
+    }
+    .add-task-fab:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(196,92,58,0.5); }
+
+    /* ─── Modal ─── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(26,22,18,0.4); backdrop-filter: blur(8px);
+      z-index: 200; display: flex; align-items: flex-end; justify-content: center;
+      padding: 0 16px; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    .modal-overlay.active { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--surface); border-radius: 20px 20px 0 0;
+      width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(0.32,0.72,0,1);
+      padding: 28px 28px 40px;
+    }
+    .modal-overlay.active .modal { transform: translateY(0); }
+    .modal-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 24px; }
+    .modal-title { font-family: var(--font-serif); font-size: 22px; font-weight: 700; margin-bottom: 24px; }
+    .form-group { margin-bottom: 20px; }
+    .form-label { display: block; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 8px; }
+    .form-input, .form-textarea {
+      width: 100%; padding: 12px 16px; border: 1.5px solid var(--border); border-radius: 10px;
+      font-family: var(--font-sans); font-size: 14px; background: var(--bg);
+      color: var(--text-primary); outline: none; transition: border-color 0.2s;
+    }
+    .form-input:focus, .form-textarea:focus { border-color: var(--accent); background: #fff; }
+    .form-textarea { resize: vertical; min-height: 80px; }
+    .tag-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-option {
+      padding: 6px 16px; border-radius: 20px; border: 1.5px solid var(--border);
+      background: var(--bg); cursor: pointer; font-size: 13px; font-family: var(--font-sans);
+      color: var(--text-secondary); transition: all 0.2s;
+    }
+    .tag-option:hover, .tag-option.selected { border-color: var(--accent); background: var(--accent-light); color: var(--accent-dark); }
+    .tag-option input { display: none; }
+    .priority-options { display: flex; gap: 10px; }
+    .priority-option {
+      flex: 1; padding: 10px; border-radius: 10px; border: 1.5px solid var(--border);
+      background: var(--bg); cursor: pointer; text-align: center; font-size: 13px;
+      color: var(--text-secondary); transition: all 0.2s;
+    }
+    .priority-option:hover, .priority-option.selected.high { border-color: #E53935; background: var(--red-light); color: #E53935; }
+    .priority-option.selected.medium { border-color: #FB8C00; background: var(--orange-light); color: #FB8C00; }
+    .priority-option.selected.low { border-color: #43A047; background: var(--green-light); color: #43A047; }
+    .priority-option input { display: none; }
+    .btn-row { display: flex; gap: 12px; margin-top: 8px; }
+    .btn {
+      flex: 1; padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 600;
+      font-family: var(--font-sans); cursor: pointer; border: none; transition: all 0.2s;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+    .btn-secondary { background: var(--bg); color: var(--text-secondary); border: 1.5px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+
+    /* ─── Toast ─── */
+    .toast {
+      position: fixed; bottom: 100px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--text-primary); color: white;
+      padding: 12px 24px; border-radius: 30px; font-size: 13px; font-weight: 500;
+      z-index: 300; opacity: 0; transition: all 0.3s; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ─── Animations ─── */
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .task-card { animation: fadeInUp 0.25s ease; }
+    .month-day-group { animation: fadeInUp 0.3s ease; }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 640px) {
+      .container { padding: 16px 16px 80px; }
+      .header { padding: 0 16px; }
+      .stats-bar { grid-template-columns: 1fr 1fr; }
+      .stats-bar .stat-card:last-child { grid-column: 1 / -1; }
+      .add-task-fab { bottom: 24px; right: 24px; }
+      .import-name-input-row { flex-direction: column; }
+    }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-logo">
+        <div class="logo-mark">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect x="2" y="3" width="14" height="13" rx="2" stroke="white" stroke-width="1.5"/>
+            <line x1="5" y1="1.5" x2="5" y2="4.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="13" y1="1.5" x2="13" y2="4.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="2" y1="7.5" x2="16" y2="7.5" stroke="white" stroke-width="1.5"/>
+            <rect x="5" y="10" width="3" height="2" rx="0.5" fill="white"/>
+            <rect x="10" y="10" width="3" height="2" rx="0.5" fill="white"/>
+          </svg>
+        </div>
+        <h1>我的日程</h1>
+      </div>
+      <div class="header-date" id="headerDate">
+        <div class="day-name" id="dayName">加载中...</div>
+        <div class="full-date" id="fullDate">--</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- View Tabs -->
+    <div class="view-tabs">
+      <button class="view-tab active" id="tabToday" onclick="switchView('today', true)">📌 今日</button>
+      <button class="view-tab" id="tabMonth" onclick="switchView('month')">📊 本月汇总</button>
+      <button class="view-tab" id="tabImport" onclick="switchView('import')">📥 导入</button>
+    </div>
+
+    <!-- ─── TODAY VIEW ─── -->
+    <div id="viewToday">
+      <div class="date-nav">
+        <button class="date-nav-btn" onclick="changeDate(-1)" title="前一天">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="date-nav-center">
+          <div class="date-nav-display" id="navDate" onclick="toggleCalendar()">
+            <span id="navDayLabel">今天</span><span id="navDayNum"></span>
+            <span class="cal-icon">📅</span>
+          </div>
+          <div class="calendar-dropdown" id="calendarDropdown">
+            <div class="cal-header">
+              <button class="cal-nav-btn" onclick="calNavMonth(-1)"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2L3 6L8 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+              <div class="cal-month-label" id="calMonthLabel"></div>
+              <button class="cal-nav-btn" onclick="calNavMonth(1)"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2L9 6L4 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+            <div class="cal-footer"><button class="cal-today-btn" onclick="goToToday(); closeCalendar();">回到今天</button></div>
+          </div>
+        </div>
+        <button class="date-nav-btn" onclick="changeDate(1)" title="后一天">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 2L10 7L5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="stats-bar">
+        <div class="stat-card"><span class="stat-label">总任务</span><span class="stat-value" id="statTotal">0</span><span class="stat-sub" id="statTotalSub">今日计划</span></div>
+        <div class="stat-card accent-stat"><span class="stat-label">已完成</span><span class="stat-value" id="statDone">0</span><span class="stat-sub" id="statDoneSub">0% 完成率</span></div>
+        <div class="stat-card"><span class="stat-label">剩余任务</span><span class="stat-value" id="statLeft">0</span><span class="stat-sub" id="statLeftSub">等待执行</span></div>
+      </div>
+      <div id="taskListArea"></div>
+    </div>
+
+    <!-- ─── MONTHLY SUMMARY VIEW ─── -->
+    <div id="viewMonth" style="display:none;">
+      <div class="month-summary-header">
+        <div class="month-summary-title">📋 本月任务总览</div>
+        <div class="month-summary-nav">
+          <button class="month-summary-nav-btn" onclick="changeMonth(-1)"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2L3 6L8 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+          <div class="month-label" id="monthLabel"></div>
+          <button class="month-summary-nav-btn" onclick="changeMonth(1)"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2L9 6L4 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        </div>
+      </div>
+      <div class="month-stat-row" id="monthStatRow"></div>
+      <div id="monthCalendarDots"></div>
+      <div id="monthTaskList"></div>
+    </div>
+
+    <!-- ─── IMPORT VIEW ─── -->
+    <div id="viewImport" style="display:none;">
+      <div class="import-panel">
+        <div class="import-panel-title">📥 从文件导入日程</div>
+
+        <div class="import-hint">
+          支持 <b>Excel (.xlsx / .xls)</b>、<b>CSV</b> 和 <b>PDF</b> 文件。系统会自动识别日期列和人名列，输入姓名后提取该人的所有日期安排。
+        </div>
+
+        <!-- File Drop Zone -->
+        <div class="import-drop-zone" id="importDropZone">
+          <div class="drop-icon">📂</div>
+          <div class="drop-text">拖拽文件到这里，或 <b>点击选择文件</b><br>支持 .xlsx .xls .csv .pdf（可多选）</div>
+          <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv,.txt,.pdf" multiple onchange="handleFileSelect(event)">
+          <div class="import-drop-zone-actions">
+            <button type="button" class="import-drop-zone-btn" onclick="document.getElementById('importFileInput').click(); event.stopPropagation();">📎 选择多个文件</button>
+            <button type="button" class="import-drop-zone-btn" onclick="document.getElementById('importFolderInput').click(); event.stopPropagation();">📁 选择文件夹</button>
+          </div>
+        </div>
+        <input type="file" id="importFolderInput" webkitdirectory directory accept=".xlsx,.xls,.csv,.txt,.pdf" multiple style="display:none;" onchange="handleFileSelect(event)">
+
+        <!-- Files List (shown after files loaded) -->
+        <div id="importFilesListArea" style="display:none;">
+          <div class="import-batch-summary">
+            <span class="summary-text" id="importBatchSummary">已选择 0 个文件</span>
+            <button class="summary-clear" onclick="clearImportFile()">全部清除</button>
+          </div>
+          <!-- Drop target for adding more files -->
+          <div class="import-add-more-zone" id="importAddMoreZone">
+            <input type="file" id="importAddMoreInput" accept=".xlsx,.xls,.csv,.txt,.pdf" multiple onchange="handleFileSelect(event)" style="position:absolute;inset:0;opacity:0;cursor:pointer;">
+            <div class="import-add-more-text">＋ 拖拽或 <b>点击</b> 继续添加文件</div>
+          </div>
+          <div class="import-files-list" id="importFilesList"></div>
+        </div>
+
+        <!-- Name Input + Extract -->
+        <div class="import-name-input-row">
+          <div class="form-group">
+            <label class="form-label">人名筛选</label>
+            <input class="form-input" id="importNameInput" type="text" placeholder="输入要提取的人名..." oninput="onNameInputChange()">
+          </div>
+          <div class="import-btn-row">
+            <button class="btn-sm btn-import" id="btnExtract" onclick="extractPersonSchedule()" disabled>🔍 提取</button>
+          </div>
+        </div>
+
+        <!-- Extracted Results -->
+        <div class="import-result" id="importResult" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <button class="add-task-fab" onclick="openModal()" title="添加任务 (N)">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-handle"></div>
+      <h2 class="modal-title" id="modalTitle">添加任务</h2>
+      <form id="taskForm" onsubmit="saveTask(event)">
+        <div class="form-group"><label class="form-label">任务名称 *</label><input class="form-input" id="taskTitle" type="text" placeholder="输入任务名称..." required maxlength="80"></div>
+        <div class="form-group"><label class="form-label">标签</label>
+          <div class="tag-options">
+            <label class="tag-option selected" data-tag="work"><input type="radio" name="tag" value="work" checked> 💼 工作</label>
+            <label class="tag-option" data-tag="personal"><input type="radio" name="tag" value="personal"> 🏠 个人</label>
+            <label class="tag-option" data-tag="urgent"><input type="radio" name="tag" value="urgent"> 🔴 紧急</label>
+            <label class="tag-option" data-tag="meeting"><input type="radio" name="tag" value="meeting"> 📅 会议</label>
+            <label class="tag-option" data-tag="other"><input type="radio" name="tag" value="other"> ⭐ 其他</label>
+          </div>
+        </div>
+        <div class="form-group"><label class="form-label">优先级</label>
+          <div class="priority-options">
+            <label class="priority-option selected" data-priority="medium"><input type="radio" name="priority" value="medium" checked>🟡 中</label>
+            <label class="priority-option" data-priority="high"><input type="radio" name="priority" value="high">🔴 高</label>
+            <label class="priority-option" data-priority="low"><input type="radio" name="priority" value="low">🟢 低</label>
+          </div>
+        </div>
+        <div class="form-group"><label class="form-label">备注</label><textarea class="form-textarea" id="taskNote" placeholder="添加备注信息（可选）..."></textarea></div>
+        <input type="hidden" id="editTaskId">
+        <div class="btn-row">
+          <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+          <button type="submit" class="btn btn-primary" id="modalSubmitBtn">添加任务</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ─── State ───
+    let currentDate = new Date();
+    let currentView = 'month';
+    let monthViewDate = new Date();
+    let tasks = [];
+    const STORAGE_KEY = 'my_schedule_tasks_v2';
+
+    // Import state
+    let importFiles = [];       // array of { file: File, data: 2D array, headers: string[], fileName: string }
+    let importExtracted = [];    // extracted items for person
+    const SUPPORTED_EXTS = ['xlsx','xls','csv','txt','pdf'];
+
+    const TAG_LABELS = { work:'💼 工作', personal:'🏠 个人', urgent:'🔴 紧急', meeting:'📅 会议', other:'⭐ 其他' };
+    const TAG_LABELS_SHORT = { work:'工作', personal:'个人', urgent:'紧急', meeting:'会议', other:'其他' };
+    const PRIORITY_LABELS = { high:'🔴 高', medium:'🟡 中', low:'🟢 低' };
+
+    // ─── Init ───
+    function init() {
+      loadTasks();
+      document.getElementById('tabToday').classList.toggle('active', currentView === 'today');
+      document.getElementById('tabMonth').classList.toggle('active', currentView === 'month');
+      document.getElementById('tabImport').classList.toggle('active', currentView === 'import');
+      document.getElementById('viewToday').style.display = currentView === 'today' ? 'block' : 'none';
+      document.getElementById('viewMonth').style.display = currentView === 'month' ? 'block' : 'none';
+      document.getElementById('viewImport').style.display = currentView === 'import' ? 'block' : 'none';
+      render();
+      setupDragDrop();
+    }
+
+    // ─── Storage ───
+    function loadTasks() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) { tasks = JSON.parse(raw); return; }
+        const old = localStorage.getItem('my_schedule_tasks');
+        if (old) { tasks = JSON.parse(old); saveTasks(); } else { tasks = []; }
+      } catch { tasks = []; }
+    }
+    function saveTasks() { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
+    function getDateKey(date) {
+      const d = date instanceof Date ? date : new Date(date);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function getTasksForDate(date) { const key = getDateKey(date); return tasks.filter(t => t.date === key); }
+
+    // ─── Render ───
+    function render() {
+      updateHeader();
+      if (currentView === 'today') { updateStats(); renderTaskList(); }
+      else if (currentView === 'month') { renderMonthSummary(); }
+    }
+    function updateHeader() {
+      const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
+      const isToday = isSameDay(currentDate, new Date());
+      const d = currentDate;
+      document.getElementById('dayName').textContent = isToday ? '今天' : dayNames[d.getDay()];
+      document.getElementById('fullDate').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+      document.getElementById('navDayLabel').textContent = isToday ? '今天' : `${d.getMonth()+1}月${d.getDate()}日`;
+      document.getElementById('navDayNum').textContent = dayNames[d.getDay()];
+    }
+
+    // ─── View Switching ───
+    function switchView(view, resetToToday) {
+      currentView = view;
+      if (view === 'today' && resetToToday) {
+        currentDate = new Date();
+      }
+      document.getElementById('tabToday').classList.toggle('active', view === 'today');
+      document.getElementById('tabMonth').classList.toggle('active', view === 'month');
+      document.getElementById('tabImport').classList.toggle('active', view === 'import');
+      document.getElementById('viewToday').style.display = view === 'today' ? 'block' : 'none';
+      document.getElementById('viewMonth').style.display = view === 'month' ? 'block' : 'none';
+      document.getElementById('viewImport').style.display = view === 'import' ? 'block' : 'none';
+      closeCalendar();
+      render();
+    }
+
+    // ─── Calendar ───
+    let calViewDate = new Date();
+    function toggleCalendar() {
+      const el = document.getElementById('calendarDropdown');
+      if (el.classList.contains('open')) { closeCalendar(); return; }
+      calViewDate = new Date(currentDate);
+      renderCalendar(); el.classList.add('open');
+      setTimeout(() => document.addEventListener('click', calOutsideClick), 0);
+    }
+    function closeCalendar() { document.getElementById('calendarDropdown').classList.remove('open'); document.removeEventListener('click', calOutsideClick); }
+    function calOutsideClick(e) { const dd = document.getElementById('calendarDropdown'); const tr = document.getElementById('navDate'); if (!dd.contains(e.target) && !tr.contains(e.target)) closeCalendar(); }
+    function calNavMonth(delta) { calViewDate = new Date(calViewDate.getFullYear(), calViewDate.getMonth()+delta, 1); renderCalendar(); }
+    function renderCalendar() {
+      const year = calViewDate.getFullYear(), month = calViewDate.getMonth(), today = new Date();
+      document.getElementById('calMonthLabel').textContent = `${year}年${month+1}月`;
+      const weekdays = ['日','一','二','三','四','五','六'];
+      let html = weekdays.map(d => `<div class="cal-weekday">${d}</div>`).join('');
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month+1, 0).getDate();
+      const daysInPrev = new Date(year, month, 0).getDate();
+      for (let i = firstDay-1; i >= 0; i--) html += `<div class="cal-day other-month">${daysInPrev-i}</div>`;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(year, month, d);
+        const cls = ['cal-day'];
+        if (isSameDay(date, today)) cls.push('today');
+        if (isSameDay(date, currentDate)) cls.push('selected');
+        if (getTasksForDate(date).length > 0) cls.push('has-tasks');
+        html += `<div class="${cls.join(' ')}" onclick="selectDate(${year},${month},${d})">${d}</div>`;
+      }
+      const totalCells = firstDay + daysInMonth;
+      const rem = totalCells % 7;
+      if (rem !== 0) for (let d = 1; d <= 7-rem; d++) html += `<div class="cal-day other-month">${d}</div>`;
+      document.getElementById('calGrid').innerHTML = html;
+    }
+    function selectDate(y, m, d) { currentDate = new Date(y, m, d); closeCalendar(); switchView('today', false); }
+
+    // ─── Stats ───
+    function updateStats() {
+      const dt = getTasksForDate(currentDate);
+      const total = dt.length, done = dt.filter(t => t.completed).length, left = total - done;
+      const pct = total > 0 ? Math.round((done/total)*100) : 0;
+      const isToday = isSameDay(currentDate, new Date());
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statTotalSub').textContent = isToday ? '今日计划' : '该日计划';
+      document.getElementById('statDone').textContent = done;
+      document.getElementById('statDoneSub').textContent = total > 0 ? `${pct}% 完成率` : '0% 完成率';
+      document.getElementById('statLeft').textContent = left;
+      document.getElementById('statLeftSub').textContent = left > 0 ? '等待执行' : '全部完成 ✓';
+    }
+
+    // ─── Task List Render ───
+    function renderTaskList() {
+      const c = document.getElementById('taskListArea');
+      const dt = getTasksForDate(currentDate);
+      if (!dt.length) { c.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><p>这一天还没有任务安排<br>点击右下角 <b>+</b> 按钮添加新任务吧</p></div>`; return; }
+      const sorted = [...dt].sort((a,b) => { if (a.completed !== b.completed) return a.completed ? 1 : -1; const pd = {high:0,medium:1,low:2}; return (pd[a.priority]||1)-(pd[b.priority]||1); });
+      c.innerHTML = `<div class="task-list">${sorted.map(renderTaskCard).join('')}</div>`;
+    }
+    function renderTaskCard(task) {
+      const checkClass = task.completed ? 'checked' : '';
+      const note = task.note ? `<div class="task-note-preview">${escHtml(task.note)}</div>` : '';
+      return `<div class="task-card ${task.completed?'completed':''}" onclick="toggleComplete('${task.id}')">
+        <div class="task-check ${checkClass}">${task.completed?'✓':''}</div>
+        <div class="task-card-body">
+          <div class="task-card-title">${escHtml(task.title)}</div>
+          <div class="task-card-meta">
+            <span class="task-tag ${task.tag}">${TAG_LABELS_SHORT[task.tag]||'其他'}</span>
+            <span class="task-priority-badge ${task.priority}">${PRIORITY_LABELS[task.priority]||'🟡 中'}</span>
+          </div>${note}
+        </div>
+        <div class="task-card-actions" onclick="event.stopPropagation()">
+          <button class="task-action-btn" onclick="openModal('${task.id}')" title="编辑">✏</button>
+          <button class="task-action-btn delete" onclick="deleteTask('${task.id}')" title="删除">🗑</button>
+        </div></div>`;
+    }
+
+    // ─── Month Summary ───
+    function changeMonth(delta) { monthViewDate = new Date(monthViewDate.getFullYear(), monthViewDate.getMonth()+delta, 1); renderMonthSummary(); }
+    function renderMonthSummary() {
+      const year = monthViewDate.getFullYear(), month = monthViewDate.getMonth();
+      document.getElementById('monthLabel').textContent = `${year}年${month+1}月`;
+      const mt = tasks.filter(t => { const [y,m] = t.date.split('-').map(Number); return y===year && m===month+1; });
+      const total = mt.length, done = mt.filter(t=>t.completed).length, urgent = mt.filter(t=>t.tag==='urgent'&&!t.completed).length;
+      document.getElementById('monthStatRow').innerHTML = `
+        <div class="month-stat-chip"><div class="chip-icon">📋</div><div class="chip-body"><div class="chip-num">${total}</div><div class="chip-label">总任务</div></div></div>
+        <div class="month-stat-chip"><div class="chip-icon">✅</div><div class="chip-body"><div class="chip-num">${done}</div><div class="chip-label">已完成</div></div></div>
+        <div class="month-stat-chip"><div class="chip-icon">⚡</div><div class="chip-body"><div class="chip-num">${urgent}</div><div class="chip-label">紧急待办</div></div></div>`;
+      renderMonthCalendarDots(year, month);
+      const daysInMonth = new Date(year, month+1, 0).getDate();
+      const today = new Date();
+      let listHtml = ''; let hasAny = false;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(year, month, d);
+        const dayTasks = getTasksForDate(date);
+        if (!dayTasks.length) continue;
+        hasAny = true;
+        const isToday = isSameDay(date, today), isWeekend = date.getDay()===0||date.getDay()===6;
+        const sorted = [...dayTasks].sort((a,b) => { if (a.completed!==b.completed) return a.completed?1:-1; const pd={high:0,medium:1,low:2}; return (pd[a.priority]||1)-(pd[b.priority]||1); });
+        listHtml += `<div class="month-day-group"><div class="month-day-label">
+          <span class="day-badge ${isWeekend?'weekend':''}">${isToday?'今天':d}日</span>
+          <span class="day-date">${['周日','周一','周二','周三','周四','周五','周六'][date.getDay()]}</span>
+          <div class="day-divider"></div><span class="day-count">${dayTasks.length} 个任务</span>
+        </div><div class="task-list">${sorted.map(t => renderTaskCard(t)).join('')}</div></div>`;
+      }
+      if (!hasAny) listHtml = `<div class="empty-state"><div class="empty-icon">📭</div><p>${year}年${month+1}月还没有任何任务<br>去今日视图添加一些吧</p></div>`;
+      document.getElementById('monthTaskList').innerHTML = listHtml;
+    }
+    function renderMonthCalendarDots(year, month) {
+      const today = new Date(), firstDay = new Date(year, month, 1).getDay(), daysInMonth = new Date(year, month+1, 0).getDate();
+      const weekdays = ['日','一','二','三','四','五','六'];
+      let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:24px;">`;
+      weekdays.forEach(w => { html += `<div style="text-align:center;font-size:11px;font-weight:600;color:var(--text-secondary);padding:4px 0;">${w}</div>`; });
+      for (let i = 0; i < firstDay; i++) html += `<div></div>`;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(year, month, d);
+        const isToday = isSameDay(date, today), isWeekend = date.getDay()===0||date.getDay()===6;
+        const hasTasks = getTasksForDate(date).length > 0, isSelected = isSameDay(date, currentDate);
+        const dayNum = `<span style="font-size:12px;font-weight:${isToday?'700':'400'};color:${isToday?'var(--accent)':(isWeekend?'#888':'var(--text-primary)')};">${d}</span>`;
+        const dot = hasTasks ? `<span style="width:5px;height:5px;border-radius:50%;background:${isToday?'white':'var(--accent)'};display:block;margin:0 auto;"></span>` : '';
+        const bg = isSelected ? 'background:var(--accent);' : (isToday ? 'background:var(--accent-light);' : '');
+        html += `<div style="display:flex;flex-direction:column;align-items:center;padding:6px 0;border-radius:8px;cursor:pointer;${bg}" onclick="selectDate(${year},${month},${d})">${dayNum}${dot}</div>`;
+      }
+      html += `</div>`;
+      document.getElementById('monthCalendarDots').innerHTML = html;
+    }
+
+    // ─── Actions ───
+    function changeDate(delta) { currentDate = new Date(currentDate.getTime() + delta*86400000); render(); }
+    function goToToday() { currentDate = new Date(); render(); }
+    function toggleComplete(id) { const t = tasks.find(x=>x.id===id); if(!t) return; t.completed=!t.completed; saveTasks(); render(); showToast(t.completed?'✅ 任务已完成':'↩ 已取消完成'); }
+    function deleteTask(id) { if(!confirm('确定要删除这个任务吗？')) return; tasks=tasks.filter(t=>t.id!==id); saveTasks(); render(); showToast('🗑 任务已删除'); }
+
+    // ─── Modal ───
+    function openModal(editId) {
+      const title = document.getElementById('modalTitle'), submitBtn = document.getElementById('modalSubmitBtn');
+      if (editId) {
+        const t = tasks.find(x=>x.id===editId); if(!t) return;
+        title.textContent = '编辑任务'; submitBtn.textContent = '保存修改';
+        document.getElementById('taskTitle').value = t.title;
+        document.getElementById('taskNote').value = t.note || '';
+        document.getElementById('editTaskId').value = t.id;
+        document.querySelectorAll('.tag-option').forEach(el => { el.classList.toggle('selected', el.dataset.tag===t.tag); el.querySelector('input').checked = el.dataset.tag===t.tag; });
+        document.querySelectorAll('.priority-option').forEach(el => { el.classList.toggle('selected', el.dataset.priority===t.priority); el.querySelector('input').checked = el.dataset.priority===t.priority; });
+      } else {
+        title.textContent = '添加任务'; submitBtn.textContent = '添加任务';
+        document.getElementById('taskForm').reset(); document.getElementById('editTaskId').value = '';
+        document.querySelectorAll('.tag-option').forEach(el => el.classList.remove('selected'));
+        document.querySelector('.tag-option[data-tag="work"]').classList.add('selected');
+        document.querySelector('.tag-option[data-tag="work"] input').checked = true;
+        document.querySelectorAll('.priority-option').forEach(el => el.classList.remove('selected'));
+        document.querySelector('.priority-option[data-priority="medium"]').classList.add('selected');
+        document.querySelector('.priority-option[data-priority="medium"] input').checked = true;
+      }
+      document.getElementById('modalOverlay').classList.add('active');
+    }
+    function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
+    function handleOverlayClick(e) { if (e.target===document.getElementById('modalOverlay')) closeModal(); }
+    function saveTask(e) {
+      e.preventDefault();
+      const title = document.getElementById('taskTitle').value.trim();
+      const tag = document.querySelector('.tag-option.selected')?.dataset.tag || 'other';
+      const priority = document.querySelector('.priority-option.selected')?.dataset.priority || 'medium';
+      const note = document.getElementById('taskNote').value.trim();
+      const editId = document.getElementById('editTaskId').value;
+      if (!title) { showToast('⚠ 请输入任务名称'); return; }
+      if (editId) {
+        const t = tasks.find(x=>x.id===editId); if(t) Object.assign(t, {title,tag,priority,note});
+        showToast('✏ 任务已保存');
+      } else {
+        tasks.push({ id: Date.now().toString(), date: getDateKey(currentDate), title, tag, priority, note, completed: false, createdAt: Date.now() });
+        showToast('✅ 任务已添加');
+      }
+      saveTasks(); closeModal(); render();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ─── IMPORT FEATURE ───
+    // ═══════════════════════════════════════════════════════════
+
+    // Drag & Drop
+    function setupDragDrop() {
+      const zone = document.getElementById('importDropZone');
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+      zone.addEventListener('drop', e => {
+        e.preventDefault(); zone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) addFiles(Array.from(e.dataTransfer.files));
+      });
+
+      // Also support drag-drop on the "add more" zone and the entire files list area
+      const addMoreZone = document.getElementById('importAddMoreZone');
+      const filesListArea = document.getElementById('importFilesListArea');
+
+      // Track if dragging over child to prevent flicker
+      let dragCounter = 0;
+      filesListArea.addEventListener('dragenter', e => { e.preventDefault(); dragCounter++; addMoreZone.classList.add('dragover'); });
+      filesListArea.addEventListener('dragover', e => { e.preventDefault(); });
+      filesListArea.addEventListener('dragleave', () => { dragCounter--; if (dragCounter <= 0) { dragCounter = 0; addMoreZone.classList.remove('dragover'); } });
+      filesListArea.addEventListener('drop', e => {
+        e.preventDefault(); dragCounter = 0; addMoreZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) addFiles(Array.from(e.dataTransfer.files));
+      });
+    }
+
+    function handleFileSelect(e) {
+      if (e.target.files.length) {
+        addFiles(Array.from(e.target.files));
+        e.target.value = '';
+      }
+    }
+
+    function addFiles(fileList) {
+      const validFiles = fileList.filter(f => {
+        const ext = f.name.split('.').pop().toLowerCase();
+        return SUPPORTED_EXTS.includes(ext);
+      });
+      if (!validFiles.length) {
+        showToast('⚠ 未找到支持的文件格式（.xlsx .xls .csv .txt .pdf）');
+        return;
+      }
+      // Deduplicate by filename (avoid adding same file twice)
+      const existingNames = new Set(importFiles.map(f => f.fileName));
+      const newFiles = validFiles.filter(f => !existingNames.has(f.name));
+      if (newFiles.length === 0) {
+        showToast('ℹ 所选文件已在列表中');
+        return;
+      }
+      // Show files list area, hide drop zone
+      document.getElementById('importDropZone').style.display = 'none';
+      document.getElementById('importFilesListArea').style.display = 'block';
+      document.getElementById('importResult').style.display = 'none';
+
+      // Process each new file
+      newFiles.forEach(file => {
+        const fileEntry = { file, data: null, headers: [], fileName: file.name };
+        importFiles.push(fileEntry);
+        processFileEntry(fileEntry);
+      });
+      renderFilesList();
+      onNameInputChange();
+      if (validFiles.length !== newFiles.length) {
+        showToast(`已跳过 ${validFiles.length - newFiles.length} 个重复文件`);
+      }
+    }
+
+    function processFileEntry(entry) {
+      const file = entry.file;
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (ext === 'pdf') {
+        processPDFEntry(entry);
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: 'array', cellDates: true });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            entry.data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            entry.headers = (entry.data[0] || []).map(h => String(h).trim());
+            renderFilesList();
+            onNameInputChange();
+          } catch(err) {
+            entry.data = [];
+            renderFilesList();
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          try {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            entry.data = lines.map(line => parseCSVLine(line));
+            entry.headers = (entry.data[0] || []).map(h => String(h).trim());
+            renderFilesList();
+            onNameInputChange();
+          } catch(err) {
+            entry.data = [];
+            renderFilesList();
+          }
+        };
+        reader.readAsText(file, 'utf-8');
+      }
+    }
+
+    function renderFilesList() {
+      const list = document.getElementById('importFilesList');
+      const loaded = importFiles.filter(f => f.data !== null).length;
+      const total = importFiles.length;
+      document.getElementById('importBatchSummary').textContent =
+        `已选择 ${total} 个文件` + (loaded < total ? `（${loaded}/${total} 已解析）` : '（全部已解析）');
+
+      list.innerHTML = importFiles.map((entry, i) => {
+        const ext = entry.file.name.split('.').pop().toLowerCase();
+        const icon = ext === 'pdf' ? '📕' : '📊';
+        const loaded = entry.data !== null;
+        return `<div class="import-file-info-item">
+          <div class="file-icon">${icon}</div>
+          <div class="file-detail">
+            <div class="file-name" title="${escHtml(entry.file.name)}">${escHtml(entry.file.name)}</div>
+            <div class="file-size">${formatFileSize(entry.file.size)}${loaded ? ' ✅ 已解析' : ' ⏳ 解析中...'}</div>
+          </div>
+          <button class="file-remove" onclick="removeFile(${i})" title="移除">✕</button>
+        </div>`;
+      }).join('');
+
+      if (!total) {
+        document.getElementById('importDropZone').style.display = '';
+        document.getElementById('importFilesListArea').style.display = 'none';
+      }
+    }
+
+    function removeFile(index) {
+      importFiles.splice(index, 1);
+      renderFilesList();
+      onNameInputChange();
+      // Clear extracted results
+      importExtracted = [];
+      document.getElementById('importResult').style.display = 'none';
+    }
+
+    function parseCSVLine(line) {
+      const result = [];
+      let current = '', inQuote = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuote) {
+          if (ch === '"' && line[i+1] === '"') { current += '"'; i++; }
+          else if (ch === '"') { inQuote = false; }
+          else { current += ch; }
+        } else {
+          if (ch === '"') { inQuote = true; }
+          else if (ch === ',' || ch === '\t') { result.push(current.trim()); current = ''; }
+          else { current += ch; }
+        }
+      }
+      result.push(current.trim());
+      return result;
+    }
+
+    // ─── PDF Processing ───
+    async function processPDFEntry(entry) {
+      try {
+        if (typeof pdfjsLib !== 'undefined') {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        const file = entry.file;
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const allRows = [];
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          const items = textContent.items.filter(item => item.str.trim());
+          if (!items.length) continue;
+          items.sort((a, b) => {
+            const yDiff = b.transform[5] - a.transform[5];
+            if (Math.abs(yDiff) > 3) return yDiff;
+            return a.transform[4] - b.transform[4];
+          });
+          let currentY = null, currentRow = [];
+          for (const item of items) {
+            const y = Math.round(item.transform[5]);
+            if (currentY === null || Math.abs(y - currentY) > 3) {
+              if (currentRow.length) allRows.push(currentRow);
+              currentRow = [item.str.trim()]; currentY = y;
+            } else { currentRow.push(item.str.trim()); }
+          }
+          if (currentRow.length) allRows.push(currentRow);
+          if (pageNum < pdf.numPages) allRows.push(['--- 第' + (pageNum+1) + '页 ---']);
+        }
+        if (!allRows.length) { entry.data = []; renderFilesList(); return; }
+        const maxCols = Math.max(...allRows.map(r => r.length));
+        entry.data = allRows.map(row => { const p = [...row]; while (p.length < maxCols) p.push(''); return p; });
+        entry.headers = (entry.data[0] || []).map(h => String(h).trim());
+        renderFilesList(); onNameInputChange();
+      } catch(err) {
+        console.error('PDF parse error:', err);
+        entry.data = [];
+        renderFilesList();
+      }
+    }
+
+    function clearImportFile() {
+      importFiles = []; importExtracted = [];
+      document.getElementById('importDropZone').style.display = '';
+      document.getElementById('importFilesListArea').style.display = 'none';
+      document.getElementById('importResult').style.display = 'none';
+      document.getElementById('importFileInput').value = '';
+      document.getElementById('importFolderInput').value = '';
+      document.getElementById('importFilesList').innerHTML = '';
+      document.getElementById('btnExtract').disabled = true;
+    }
+
+    function onNameInputChange() {
+      const name = document.getElementById('importNameInput').value.trim();
+      const hasData = importFiles.some(f => f.data !== null && f.data.length > 0);
+      document.getElementById('btnExtract').disabled = !name || !hasData;
+    }
+
+    // ─── Core: Extract person's schedule ───
+    function extractPersonSchedule() {
+      const name = document.getElementById('importNameInput').value.trim();
+      if (!name) return;
+      const loadedFiles = importFiles.filter(f => f.data !== null && f.data.length > 0);
+      if (!loadedFiles.length) { showToast('⚠ 文件数据不足'); return; }
+
+      importExtracted = [];
+
+      // Process each file
+      loadedFiles.forEach(entry => {
+        extractFromFile(name, entry.data, entry.headers, entry.fileName);
+      });
+
+      if (!importExtracted.length) {
+        const container = document.getElementById('importResult');
+        container.style.display = 'block';
+        container.innerHTML = `<div class="import-empty"><div class="empty-icon">🔍</div><p>未找到「${escHtml(name)}」的日程安排<br>请检查人名是否正确，或文件格式是否匹配</p></div>`;
+        return;
+      }
+
+      renderImportResult(name);
+    }
+
+    function extractFromFile(name, rows, headers, sourceFileName) {
+      const extractedForFile = [];
+
+      // Detect which columns might be dates, names
+      let dateColIdx = -1, nameColIdx = -1;
+      for (let c = 0; c < headers.length; c++) {
+        const h = headers[c].toLowerCase();
+        if (/日期|时间|日期安排|安排日期|date|day|日程|值班日期|排班日期/.test(h)) dateColIdx = c;
+        if (/姓名|人名|人员|名字|name|person|值班人|员工|参与者/.test(h)) nameColIdx = c;
+      }
+
+      // Check if headers are dates (roster/shift format: row=person, col=date)
+      const headerDateIndices = [];
+      for (let c = 0; c < headers.length; c++) {
+        const parsed = tryParseDate(headers[c]);
+        if (parsed) headerDateIndices.push({ col: c, date: parsed });
+      }
+
+      // ─── Strategy 1: Roster/Shift format (headers are dates, rows are names) ───
+      if (headerDateIndices.length >= 2) {
+        for (let r = 1; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row || !row.length) continue;
+          // Check all cells in the row for the name
+          let nameFound = false;
+          for (let c = 0; c < Math.min(row.length, headers.length); c++) {
+            const cell = String(row[c] || '').trim();
+            if (cell === name || cell.includes(name)) { nameFound = true; break; }
+          }
+          if (!nameFound) {
+            const rowName = String(row[0] || '').trim();
+            if (!(rowName.includes(name) || name.includes(rowName))) continue;
+          }
+          // Find task name column (first non-date column, usually column 0 or 1)
+          let taskNameCol = -1;
+          for (let c = 0; c < Math.min(row.length, headers.length); c++) {
+            const headerIsDate = headerDateIndices.some(hdi => hdi.col === c);
+            const cellValue = String(row[c] || '').trim();
+            // Task name column: not a date header, has content, looks like a task name
+            if (!headerIsDate && cellValue && !cellValue.match(/^\d+$/)) {
+              taskNameCol = c;
+              break;
+            }
+          }
+          // Extract all date cells for this person
+          for (const hdi of headerDateIndices) {
+            const cellValue = String(row[hdi.col] || '').trim();
+            // Check if this date cell mentions the person
+            if (cellValue && cellValue !== '' && cellValue !== '-' && cellValue.includes(name)) {
+              let taskName = taskNameCol >= 0 ? mergeMultiLineTaskName(rows, r, taskNameCol) : '';
+              extractedForFile.push({
+                date: hdi.date,
+                title: cleanTaskTitle(taskName || cellValue),
+                source: `${sourceFileName} - ${headers[hdi.col]}`, row: r, col: hdi.col, selected: true
+              });
+            }
+          }
+          // If no cells explicitly contain the name, extract all non-empty date cells
+          if (extractedForFile.length === 0) {
+            for (const hdi of headerDateIndices) {
+              const cellValue = String(row[hdi.col] || '').trim();
+              if (cellValue && cellValue !== '' && cellValue !== '-') {
+                let taskName = taskNameCol >= 0 ? mergeMultiLineTaskName(rows, r, taskNameCol) : '';
+                extractedForFile.push({
+                  date: hdi.date,
+                  title: cleanTaskTitle(taskName || cellValue),
+                  source: `${sourceFileName} - ${headers[hdi.col]}`, row: r, col: hdi.col, selected: true
+                });
+              }
+            }
+          }
+          break;
+        }
+      }
+
+      // ─── Strategy 2: List format (has name column + date column) ───
+      if (nameColIdx >= 0 && extractedForFile.length === 0) {
+        for (let r = 1; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row) continue;
+          const cellName = String(row[nameColIdx] || '').trim();
+          if (cellName.includes(name) || name.includes(cellName)) {
+            let dateStr = '';
+            if (dateColIdx >= 0) {
+              const parsed = tryParseDate(row[dateColIdx]);
+              if (parsed) dateStr = parsed;
+            }
+            if (!dateStr) {
+              for (let c = 0; c < row.length; c++) {
+                const parsed = tryParseDate(row[c]);
+                if (parsed) { dateStr = parsed; break; }
+              }
+            }
+            // Find task name column (not name, not date)
+            let taskName = '';
+            let taskNameCol = -1;
+            for (let c = 0; c < headers.length; c++) {
+              if (c === nameColIdx || c === dateColIdx) continue;
+              const val = String(row[c] || '').trim();
+              if (val && !tryParseDate(val) && val.length > taskName.length) {
+                taskName = val;
+                taskNameCol = c;
+              }
+            }
+            // Try to merge multi-line task names for PDFs
+            if (taskNameCol >= 0) {
+              taskName = mergeMultiLineTaskName(rows, r, taskNameCol);
+            }
+            extractedForFile.push({
+              date: dateStr,
+              title: cleanTaskTitle(taskName || cellName),
+              source: `${sourceFileName} - 行 ${r+1}`, row: r, col: nameColIdx, selected: true
+            });
+          }
+        }
+      }
+
+      // ─── Strategy 3: Scan all cells for the name, infer date from context ───
+      if (extractedForFile.length === 0) {
+        for (let r = 0; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row) continue;
+          for (let c = 0; c < row.length; c++) {
+            const cell = String(row[c] || '').trim();
+            if (!cell) continue;
+            if (cell.includes(name) || name.includes(cell)) {
+              let dateStr = '';
+              for (let dc = 0; dc < row.length; dc++) {
+                const parsed = tryParseDate(row[dc]);
+                if (parsed) { dateStr = parsed; break; }
+              }
+              if (!dateStr && c < headers.length) {
+                const parsed = tryParseDate(headers[c]);
+                if (parsed) dateStr = parsed;
+              }
+              if (!dateStr) {
+                for (let lookback = 1; lookback <= 3 && r - lookback >= 0; lookback++) {
+                  const prevRow = rows[r - lookback];
+                  if (!prevRow) continue;
+                  for (let dc = 0; dc < prevRow.length; dc++) {
+                    const parsed = tryParseDate(prevRow[dc]);
+                    if (parsed) { dateStr = parsed; break; }
+                  }
+                  if (dateStr) break;
+                }
+              }
+              // Find the best task name candidate in this row
+              let taskName = '';
+              let taskNameCol = -1;
+              for (let cc = 0; cc < row.length; cc++) {
+                const v = String(row[cc] || '').trim();
+                if (v && v !== cell && !tryParseDate(v) && !v.includes(name)) {
+                  if (v.length > taskName.length) { taskName = v; taskNameCol = cc; }
+                }
+              }
+              // Try to merge multi-line task names for PDFs
+              if (taskNameCol >= 0) {
+                taskName = mergeMultiLineTaskName(rows, r, taskNameCol);
+              }
+              const title = cleanTaskTitle(taskName || cell);
+              if (!extractedForFile.some(x => x.row === r)) {
+                extractedForFile.push({
+                  date: dateStr, title: title,
+                  source: `${sourceFileName} - 行 ${r+1}`, row: r, col: c, selected: true
+                });
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      // ─── Strategy 4: PDF pure text mode ───
+      if (extractedForFile.length === 0) {
+        const lines = rows.map(row => row.filter(c => c).join(' ')).filter(l => l.trim());
+        const dateLineMap = {};
+        for (let i = 0; i < lines.length; i++) {
+          const lineDate = tryParseDate(lines[i]);
+          if (lineDate) dateLineMap[i] = lineDate;
+        }
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.includes(name)) {
+            let dateStr = '';
+            for (let j = i; j >= Math.max(0, i - 10); j--) {
+              if (dateLineMap[j]) { dateStr = dateLineMap[j]; break; }
+            }
+            if (!dateStr) dateStr = tryParseDateFromText(line);
+            let title = line.replace(name, '').trim();
+            title = title.replace(/^[\s|\-—:：,，]+/, '').replace(/[\s|\-—:：,，]+$/, '');
+            title = cleanTaskTitle(title);
+            if (title) {
+              if (!extractedForFile.some(x => x.row === i)) {
+                extractedForFile.push({
+                  date: dateStr, title: title,
+                  source: `${sourceFileName} - 第 ${i+1} 行`, row: i, col: 0, selected: true
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Merge this file's results into global array
+      importExtracted.push(...extractedForFile);
+    }
+
+    // ─── Merge multi-line task names from PDF parsing ───
+    // PDF text extraction often splits a single cell across multiple rows.
+    // This function merges adjacent rows in the same column ONLY when we're
+    // confident they are continuations of the same task name.
+    //
+    // SAFETY RULES (all must pass to merge):
+    // 1. Next line is NOT a person assignment (no [数字%] pattern)
+    // 2. Next line is NOT a pure date
+    // 3. Next line is reasonably short (< 25 chars) - task name fragments are short
+    // 4. Current line ends incompletely (no sentence-ending punctuation)
+    // 5. Next line starts with a continuation pattern OR current line ends with open bracket/list separator
+    function mergeMultiLineTaskName(rows, startRow, colIdx) {
+      if (colIdx < 0 || startRow >= rows.length) return '';
+      let merged = String(rows[startRow][colIdx] || '').trim();
+      if (!merged) return '';
+
+      // Common Chinese continuation prefixes (e.g., "可靠" + "性" = "可靠性")
+      const continuationPrefixes = /^[性化型态式率度量力质能]/;
+      // True sentence enders
+      const sentenceEnders = /[。！？;；]/;
+      // List separators - indicate the list continues
+      const listSeparators = /[,，、]/;
+      // Person assignment pattern: 钱泽铠[50%], 颜碧桃[30%]
+      const personPattern = /\[\d+%\]|\(\d+%\)/;
+
+      for (let i = startRow + 1; i < Math.min(rows.length, startRow + 4); i++) {
+        const nextRow = rows[i];
+        if (!nextRow || colIdx >= nextRow.length) break;
+        const nextVal = String(nextRow[colIdx] || '').trim();
+        if (!nextVal) break;
+
+        // SAFETY CHECK 1: Skip person assignments (钱泽铠[50%])
+        if (personPattern.test(nextVal)) break;
+
+        // SAFETY CHECK 2: Skip pure dates
+        if (tryParseDate(nextVal)) break;
+
+        // SAFETY CHECK 3: Skip new task indicators (starts with number like "1. " or "2、")
+        if (/^\d+[\.、\s]/.test(nextVal)) break;
+
+        // SAFETY CHECK 4: Next line must be reasonably short (< 25 chars)
+        // Long lines are likely complete new entries, not fragments
+        if (nextVal.length >= 25) break;
+
+        const lastChar = merged.slice(-1);
+        const firstChar = nextVal.charAt(0);
+
+        // Check if current line ends "incompletely"
+        const endsWithListSeparator = listSeparators.test(lastChar);
+        const endsWithSentenceEnder = sentenceEnders.test(lastChar);
+        const endsWithOpenBracket = /[（(]/.test(lastChar);
+        const isIncomplete = !endsWithSentenceEnder && (endsWithListSeparator || endsWithOpenBracket);
+
+        // Check if next line looks like a continuation
+        const startsWithContinuation = continuationPrefixes.test(firstChar);
+        const startsWithClosingBracket = /^[）)]/.test(nextVal);
+
+        // Merge ONLY if:
+        // - Current line is incomplete (ends with list separator or open bracket)
+        // - AND next line starts with a clear continuation pattern
+        const shouldMerge = isIncomplete && (startsWithContinuation || startsWithClosingBracket);
+
+        if (shouldMerge) {
+          merged += nextVal;
+        } else {
+          break;
+        }
+      }
+      return merged;
+    }
+
+    // ─── Clean up task title ───
+    function cleanTaskTitle(title) {
+      if (!title) return '';
+      let cleaned = String(title).trim();
+
+      // Remove leading numbers with separators (e.g., "55 | ", "1. ", "2、")
+      cleaned = cleaned.replace(/^\s*\d+[\.、\s|｜]+\s*/, '');
+
+      // Remove duration patterns (1 d, 0.5 d, 1天, 2天, 1h, 2h, etc.)
+      cleaned = cleaned.replace(/\s*\d+\.?\d*\s*[d天h小时]+\b/gi, '');
+
+      // Remove percentage patterns ([50%], [30%], 50%, etc.)
+      cleaned = cleaned.replace(/\[?\d+%\]?/g, '');
+
+      // Remove person assignments with percentages (颜碧桃[50%],乔荣鑫[50%])
+      cleaned = cleaned.replace(/[^|｜,，\s]+\[\d+%\]/g, '');
+      cleaned = cleaned.replace(/[^|｜,，\s]+\(\d+%\)/g, '');
+
+      // Remove multiple person names separated by commas (keep only if it looks like a task name)
+      // Pattern: name1,name2 or name1，name2 (Chinese comma)
+      const namePattern = /[^|｜,，\s]{2,4}[,，][^|｜,，\s]{2,4}/;
+      if (namePattern.test(cleaned) && cleaned.length < 30) {
+        // Likely just names, keep as is
+      } else {
+        // Remove trailing name lists
+        cleaned = cleaned.replace(/[,，]\s*[^|｜,，\s]{2,4}(?:[,，][^|｜,，\s]{2,4})+\s*$/, '');
+      }
+
+      // Remove pipe separators and everything after ONLY if it looks like a task list separator
+      // Pattern: "任务A | 任务B" or "任务A｜任务B" (pipe with spaces around, or followed by another task-like segment)
+      // But NOT "Demo、DIY、博文" where | is inside the task name without surrounding context
+      const pipeMatch = cleaned.match(/(.+?)(?:\s*[|｜]\s*(.+))/);
+      if (pipeMatch) {
+        const before = pipeMatch[1].trim();
+        const after = pipeMatch[2].trim();
+        // Only truncate if the "after" part looks like another task (not just a continuation)
+        // Heuristic: after part is short (< 15 chars) or starts with a verb/task keyword
+        const taskKeywords = /^(审核|输出|编写|整理|测试|开发|设计|评审|会议|沟通|确认|提交|发布|更新|维护|支持|协助|配合|跟进|处理|解决|分析|评估|规划|部署|上线|验收|培训|调研|编制|撰写|翻译|校对|检查|归档|备份|迁移|优化|重构|调试|修复|升级|配置|安装|搭建|拆除|采购|盘点|盘点|盘点)/;
+        if (after.length < 15 || taskKeywords.test(after) || /^[A-Za-z]/.test(after)) {
+          cleaned = before;
+        }
+        // Otherwise: the | is likely part of the task name itself, keep it
+      }
+
+      // Remove common status words
+      const statusWords = ['已完成', '进行中', '未开始', '待处理', '延期', 'Done', 'In Progress', 'Todo'];
+      statusWords.forEach(word => {
+        cleaned = cleaned.replace(new RegExp(word, 'gi'), '');
+      });
+
+      // Clean up multiple spaces and trim
+      cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+      // Remove trailing punctuation
+      cleaned = cleaned.replace(/[,，;；|｜\-—]+$/g, '');
+
+      return cleaned || title; // Fallback to original if everything was stripped
+    }
+
+    function renderImportResult(name) {
+      const container = document.getElementById('importResult');
+      container.style.display = 'block';
+
+      if (!importExtracted.length) {
+        container.innerHTML = `<div class="import-empty"><div class="empty-icon">🔍</div><p>未找到「${escHtml(name)}」的日程安排<br>请检查人名是否正确，或文件格式是否匹配</p></div>`;
+        return;
+      }
+
+      // Sort by date
+      const sorted = [...importExtracted].sort((a,b) => a.date.localeCompare(b.date));
+
+      let html = `
+        <div class="import-result-header">
+          <div class="import-result-title">📋 「${escHtml(name)}」的日程</div>
+          <div class="import-result-count">${importExtracted.length} 条记录</div>
+        </div>
+        <div class="import-select-all-row">
+          <label><input type="checkbox" checked onchange="toggleSelectAll(this.checked)"> 全选/取消全选</label>
+        </div>`;
+
+      sorted.forEach((item, i) => {
+        const dateLabel = item.date ? item.date : '未识别日期';
+        html += `
+          <div class="import-item-row">
+            <input type="checkbox" ${item.selected?'checked':''} data-idx="${importExtracted.indexOf(item)}" onchange="importExtracted[${importExtracted.indexOf(item)}].selected=this.checked">
+            <div class="item-date">${escHtml(dateLabel)}</div>
+            <div class="item-content">
+              ${escHtml(item.title)}
+              <div class="item-source">来源: ${escHtml(item.source)}</div>
+            </div>
+          </div>`;
+      });
+
+      html += `
+        <div class="import-apply-row">
+          <button class="btn-sm btn-import" onclick="applyImportedTasks()">📥 导入选中项到日程</button>
+          <button class="btn-sm btn-outline" onclick="clearImportFile()">清除并重新导入</button>
+        </div>`;
+
+      container.innerHTML = html;
+    }
+
+    function toggleSelectAll(checked) {
+      importExtracted.forEach(item => item.selected = checked);
+      document.querySelectorAll('.import-item-row input[type="checkbox"]').forEach(cb => cb.checked = checked);
+    }
+
+    // ─── Extract project prefix from filename ───
+    function extractProjectPrefix(filename) {
+      if (!filename) return '';
+      // Remove extension
+      let name = filename.replace(/\.[^.]+$/, '');
+      // Remove date patterns (20260420, 2026-04-20, etc.)
+      name = name.replace(/\d{4}[-.]?\d{2}[-.]?\d{2}/g, '');
+      // Find cutoff keywords: 模组, 项目, 计划, schedule, project, plan
+      const cutoffMatch = name.match(/^(.*?)(模组|项目|计划|schedule|project|plan)/i);
+      if (cutoffMatch) {
+        let prefix = cutoffMatch[1].trim();
+        // Clean up trailing symbols
+        prefix = prefix.replace(/[-_和与跟\s]+$/g, '');
+        return prefix;
+      }
+      // If no cutoff keyword, return first segment before common separators
+      const firstSegment = name.split(/[-_和与跟\s]+/)[0];
+      return firstSegment.trim();
+    }
+
+    function applyImportedTasks() {
+      const selected = importExtracted.filter(item => item.selected);
+      if (!selected.length) { showToast('⚠ 请至少选择一条记录'); return; }
+
+      let added = 0, skipped = 0;
+      selected.forEach(item => {
+        const dateKey = item.date || getDateKey(new Date());
+        // Extract file name from source
+        const sourceFile = (item.source || '').split(' - ')[0] || '未知文件';
+        const projectPrefix = extractProjectPrefix(sourceFile);
+        // Build title with project prefix
+        let title = item.title;
+        if (projectPrefix && !title.includes(projectPrefix)) {
+          title = `${projectPrefix}${title}`;
+        }
+        // Check for duplicate
+        const exists = tasks.some(t => t.date === dateKey && t.title === title);
+        if (exists) { skipped++; return; }
+        tasks.push({
+          id: (Date.now() + added).toString() + '_' + Math.random().toString(36).slice(2,6),
+          date: dateKey,
+          title: title,
+          tag: 'imported',
+          priority: 'medium',
+          note: `从文件「${sourceFile}」导入`,
+          completed: false,
+          createdAt: Date.now()
+        });
+        added++;
+      });
+
+      saveTasks();
+      render();
+      showToast(`✅ 已导入 ${added} 条任务${skipped ? `，跳过 ${skipped} 条重复` : ''}`);
+
+      // Switch to month view to see results
+      setTimeout(() => switchView('month'), 800);
+    }
+
+    // ─── Date parsing helpers ───
+    function tryParseDate(val) {
+      if (!val) return '';
+      if (val instanceof Date && !isNaN(val)) return getDateKey(val);
+      const s = String(val).trim();
+      if (!s || s === '-') return '';
+      let m = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+      if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+      m = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+      if (m) { const y = new Date().getFullYear(); return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`; }
+      m = s.match(/(\d{1,2})月(\d{1,2})[日号]/);
+      if (m) { const y = new Date().getFullYear(); return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`; }
+      const num = Number(s);
+      if (!isNaN(num) && num > 30000 && num < 60000) { const d = new Date((num-25569)*86400000); return getDateKey(d); }
+      return '';
+    }
+
+    // Extract date from within a longer text line (e.g. "5月12日 张三 值班")
+    function tryParseDateFromText(text) {
+      if (!text) return '';
+      // 2026年5月12日
+      let m = text.match(/(\d{4})年(\d{1,2})月(\d{1,2})[日号]/);
+      if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+      // X月X日
+      m = text.match(/(\d{1,2})月(\d{1,2})[日号]/);
+      if (m) { const y = new Date().getFullYear(); return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`; }
+      // YYYY-MM-DD or YYYY/MM/DD embedded in text
+      m = text.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+      if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+      // MM-DD or MM/DD
+      m = text.match(/(?:^|[^\d])(\d{1,2})[\/\-](\d{1,2})(?:[^\d]|$)/);
+      if (m) { const y = new Date().getFullYear(); return `${y}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`; }
+      return '';
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+      return (bytes/1048576).toFixed(1) + ' MB';
+    }
+
+    // ─── Event Listeners ───
+    document.querySelectorAll('.tag-option').forEach(el => {
+      el.addEventListener('click', () => { document.querySelectorAll('.tag-option').forEach(e => e.classList.remove('selected')); el.classList.add('selected'); el.querySelector('input').checked = true; });
+    });
+    document.querySelectorAll('.priority-option').forEach(el => {
+      el.addEventListener('click', () => { document.querySelectorAll('.priority-option').forEach(e => e.classList.remove('selected')); el.classList.add('selected'); el.querySelector('input').checked = true; });
+    });
+    document.addEventListener('keydown', e => {
+      if ((e.key==='n'||e.key==='N') && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA') openModal();
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // ─── Utilities ───
+    function isSameDay(a, b) { return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+    function escHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+    function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
+
+    // ─── Boot ───
+    init();
+  </script>
+</body>
+</html>
